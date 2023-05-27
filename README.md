@@ -4,7 +4,7 @@ A Vulkan application is being written using the Zig programming language during 
 - Learning the Vulkan API, and limiting our scope to compute.
 - Learning the Zig programming language.
 - Exploring the possibilities of Zig + Vulkan Compute.
-Performance, cross-platform, minimum dependencies and tiny size as much as comfortably possible.
+- Performance, cross-platform, minimum dependencies and tiny size as much as comfortably possible.
 ## Build Instructions
 Debug:
 ```sh
