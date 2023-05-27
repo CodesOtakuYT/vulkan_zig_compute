@@ -1,0 +1,5 @@
+#! /bin/sh
+pushd lib/vulkan-zig
+zig build
+popd
+lib/vulkan-zig/zig-out/bin/generator /usr/share/vulkan/registry/vk.xml src/vk.zig
