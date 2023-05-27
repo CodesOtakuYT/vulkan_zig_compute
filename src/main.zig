@@ -2,7 +2,7 @@ const builtin = @import("builtin");
 const std = @import("std");
 
 // const vk = @import("vulkan");
-const vk = @import("vk.zig"); // workaround for autcomplete
+const vk = @import("vk.zig"); // workaround for autocomplete
 
 const BaseDispatch = vk.BaseWrapper(.{
     .createInstance = true,
@@ -183,10 +183,12 @@ const Device = struct {
 };
 
 const Queue = struct {
+    const Self = @This();
+
     handle: vk.Queue,
     device: Device,
 
-    fn init(device: Device, family_index: usize, index: usize) Queue {
+    fn init(device: Device, family_index: usize, index: usize) Self {
         return .{
             .device = device,
             .handle = device.vkd.getDeviceQueue(
