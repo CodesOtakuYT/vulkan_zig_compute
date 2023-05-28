@@ -1,5 +1,6 @@
 const builtin = @import("builtin");
 const std = @import("std");
+const shaders = @import("shaders");
 
 // const vk = @import("vulkan");
 const vk = @import("vk.zig"); // workaround for autocomplete
@@ -18,6 +19,26 @@ const InstanceDispatch = vk.InstanceWrapper(.{
 const DeviceDispatch = vk.DeviceWrapper(.{
     .destroyDevice = true,
     .getDeviceQueue = true,
+    .createShaderModule = true,
+    .destroyShaderModule = true,
+    .createPipelineLayout = true,
+    .destroyPipelineLayout = true,
+    .createPipelineCache = true,
+    .destroyPipelineCache = true,
+    .getPipelineCacheData = true,
+    .createComputePipelines = true,
+    .destroyPipeline = true,
+    .createCommandPool = true,
+    .destroyCommandPool = true,
+    .allocateCommandBuffers = true,
+    .beginCommandBuffer = true,
+    .endCommandBuffer = true,
+    .cmdBindPipeline = true,
+    .cmdDispatch = true,
+    .createFence = true,
+    .destroyFence = true,
+    .queueSubmit = true,
+    .waitForFences = true,
 });
 
 const VulkanLoader = struct {
@@ -200,6 +221,219 @@ const Queue = struct {
     }
 };
 
+const ShaderModule = struct {
+    const Self = @This();
+
+    handle: vk.ShaderModule,
+    device: Device,
+    allocation_callbacks: ?*vk.AllocationCallbacks,
+
+    fn init(device: Device, code: []const u8, allocation_callbacks: ?*vk.AllocationCallbacks) !Self {
+        return .{
+            .handle = try device.vkd.createShaderModule(device.handle, &.{
+                .code_size = code.len,
+                .p_code = @ptrCast([*]const u32, @alignCast(4, code.ptr)),
+            }, allocation_callbacks),
+            .device = device,
+            .allocation_callbacks = allocation_callbacks,
+        };
+    }
+
+    fn deinit(self: Self) void {
+        self.device.vkd.destroyShaderModule(self.device.handle, self.handle, self.allocation_callbacks);
+    }
+};
+
+const PipelineLayout = struct {
+    const Self = @This();
+
+    handle: vk.PipelineLayout,
+    device: Device,
+    allocation_callbacks: ?*vk.AllocationCallbacks,
+
+    fn init(device: Device, allocation_callbacks: ?*vk.AllocationCallbacks) !Self {
+        const descripter_set_layouts: []const vk.DescriptorSetLayout = &.{};
+        return .{
+            .handle = try device.vkd.createPipelineLayout(device.handle, &.{
+                .p_set_layouts = descripter_set_layouts.ptr,
+                .set_layout_count = descripter_set_layouts.len,
+            }, allocation_callbacks),
+            .device = device,
+            .allocation_callbacks = allocation_callbacks,
+        };
+    }
+
+    fn deinit(self: Self) void {
+        self.device.vkd.destroyPipelineLayout(self.device.handle, self.handle, self.allocation_callbacks);
+    }
+};
+
+const PipelineCache = struct {
+    const Self = @This();
+
+    handle: vk.PipelineCache,
+    device: Device,
+    allocation_callbacks: ?*vk.AllocationCallbacks,
+
+    fn init(device: Device, data: []u8, allocation_callbacks: ?*vk.AllocationCallbacks) !Self {
+        return .{
+            .handle = try device.vkd.createPipelineCache(device.handle, &.{
+                .initial_data_size = data.len,
+                .p_initial_data = data.ptr,
+            }, allocation_callbacks),
+            .device = device,
+            .allocation_callbacks = allocation_callbacks,
+        };
+    }
+
+    fn deinit(self: Self) void {
+        self.device.vkd.destroyPipelineCache(self.device.handle, self.handle, self.allocation_callbacks);
+    }
+
+    fn get_data(self: Self, allocator: std.mem.Allocator) ![]u8 {
+        var size: usize = undefined;
+        _ = try self.device.vkd.getPipelineCacheData(self.device.handle, self.handle, &size, null);
+        const data = try allocator.alloc(u8, size);
+        errdefer allocator.free(data);
+        _ = try self.device.vkd.getPipelineCacheData(self.device.handle, self.handle, &size, data.ptr);
+        return data;
+    }
+
+    fn save(self: Self, sub_path: []const u8, allocator: std.mem.Allocator) !void {
+        const file = try std.fs.cwd().createFile(sub_path, .{});
+        defer file.close();
+        const data = try self.get_data(allocator);
+        defer allocator.free(data);
+        try file.writeAll(data);
+    }
+};
+
+const ComputePipelines = struct {
+    const Self = @This();
+
+    handles: []vk.Pipeline,
+    device: Device,
+    allocation_callbacks: ?*vk.AllocationCallbacks,
+    allocator: std.mem.Allocator,
+
+    fn init(device: Device, infos: []const vk.ComputePipelineCreateInfo, pipeline_cache: PipelineCache, allocator: std.mem.Allocator, allocation_callbacks: ?*vk.AllocationCallbacks) !Self {
+        const handles = try allocator.alloc(vk.Pipeline, infos.len);
+        errdefer allocator.free(handles);
+
+        _ = try device.vkd.createComputePipelines(
+            device.handle,
+            pipeline_cache.handle,
+            @intCast(u32, infos.len),
+            infos.ptr,
+            allocation_callbacks,
+            handles.ptr,
+        );
+
+        return .{
+            .handles = handles,
+            .device = device,
+            .allocation_callbacks = allocation_callbacks,
+            .allocator = allocator,
+        };
+    }
+
+    fn deinit(self: Self) void {
+        for (self.handles) |handle| {
+            self.device.vkd.destroyPipeline(self.device.handle, handle, self.allocation_callbacks);
+        }
+        self.allocator.free(self.handles);
+    }
+};
+
+const CommandPool = struct {
+    const Self = @This();
+
+    handle: vk.CommandPool,
+    device: Device,
+    allocation_callbacks: ?*vk.AllocationCallbacks,
+
+    fn init(device: Device, queue_family_index: usize, allocation_callbacks: ?*vk.AllocationCallbacks) !Self {
+        return .{
+            .handle = try device.vkd.createCommandPool(device.handle, &.{
+                .queue_family_index = @intCast(u32, queue_family_index),
+            }, allocation_callbacks),
+            .device = device,
+            .allocation_callbacks = allocation_callbacks,
+        };
+    }
+
+    fn deinit(self: Self) void {
+        self.device.vkd.destroyCommandPool(self.device.handle, self.handle, self.allocation_callbacks);
+    }
+};
+
+const CommandBuffers = struct {
+    const Self = @This();
+
+    handles: []vk.CommandBuffer,
+    device: Device,
+    allocation_callbacks: ?*vk.AllocationCallbacks,
+    allocator: std.mem.Allocator,
+
+    fn init(device: Device, command_pool: CommandPool, count: u32, allocator: std.mem.Allocator, allocation_callbacks: ?*vk.AllocationCallbacks) !Self {
+        const handles = try allocator.alloc(vk.CommandBuffer, count);
+        errdefer allocator.free(handles);
+
+        _ = try device.vkd.allocateCommandBuffers(
+            device.handle,
+            &.{
+                .command_pool = command_pool.handle,
+                .level = vk.CommandBufferLevel.primary,
+                .command_buffer_count = count,
+            },
+            handles.ptr,
+        );
+
+        return .{
+            .handles = handles,
+            .device = device,
+            .allocation_callbacks = allocation_callbacks,
+            .allocator = allocator,
+        };
+    }
+
+    fn deinit(self: Self) void {
+        self.allocator.free(self.handles);
+    }
+};
+
+const Fence = struct {
+    const Self = @This();
+
+    handle: vk.Fence,
+    device: Device,
+    allocation_callbacks: ?*vk.AllocationCallbacks,
+
+    fn init(device: Device, queue_family_index: usize, allocation_callbacks: ?*vk.AllocationCallbacks) !Self {
+        _ = queue_family_index;
+        return .{
+            .handle = try device.vkd.createFence(device.handle, &.{}, allocation_callbacks),
+            .device = device,
+            .allocation_callbacks = allocation_callbacks,
+        };
+    }
+
+    fn deinit(self: Self) void {
+        self.device.vkd.destroyFence(self.device.handle, self.handle, self.allocation_callbacks);
+    }
+};
+
+fn read_file_contents(sub_path: []const u8, allocator: std.mem.Allocator) ![]u8 {
+    const file = try std.fs.cwd().openFile(sub_path, .{});
+    defer file.close();
+    const metadata = try file.metadata();
+    if (metadata.kind() == .File) {
+        return file.readToEndAlloc(allocator, std.math.maxInt(usize));
+    } else {
+        return error.WrongFileType;
+    }
+}
+
 pub fn main() !void {
     var general_purpose_allocator = std.heap.GeneralPurposeAllocator(.{
         .verbose_log = true,
@@ -231,4 +465,79 @@ pub fn main() !void {
     const queue = queues[0];
     const device = queue.device;
     defer device.deinit();
+
+    const shader_module = try ShaderModule.init(device, &shaders.minimal_shader, null);
+    defer shader_module.deinit();
+
+    const pipeline_layout = try PipelineLayout.init(device, null);
+    defer pipeline_layout.deinit();
+
+    var data: []u8 = &.{};
+
+    if (read_file_contents("pipeline_cache.bin", allocator)) |contents| {
+        data = contents;
+    } else |_| {}
+
+    defer if (data.len > 0) allocator.free(data);
+
+    const pipeline_cache = try PipelineCache.init(device, data, null);
+    defer {
+        pipeline_cache.save("pipeline_cache.bin", allocator) catch {};
+        pipeline_cache.deinit();
+    }
+
+    const compute_pipelines = try ComputePipelines.init(device, &.{
+        .{
+            .layout = pipeline_layout.handle,
+            .stage = .{
+                .module = shader_module.handle,
+                .stage = .{
+                    .compute_bit = true,
+                },
+                .p_name = "main",
+            },
+            .base_pipeline_index = 0,
+        },
+    }, pipeline_cache, allocator, null);
+    defer compute_pipelines.deinit();
+
+    const command_pool = try CommandPool.init(device, queue_family.index, null);
+    defer command_pool.deinit();
+
+    const command_buffers = try CommandBuffers.init(device, command_pool, 1, allocator, null);
+    defer command_buffers.deinit();
+
+    const command_buffer = command_buffers.handles[0];
+    const pipeline = compute_pipelines.handles[0];
+
+    try device.vkd.beginCommandBuffer(command_buffer, &.{
+        .flags = vk.CommandBufferUsageFlags{
+            .one_time_submit_bit = true,
+        },
+    });
+    device.vkd.cmdBindPipeline(command_buffer, vk.PipelineBindPoint.compute, pipeline);
+    device.vkd.cmdDispatch(command_buffer, 1024, 1, 1);
+    try device.vkd.endCommandBuffer(command_buffer);
+
+    const fence = try Fence.init(device, queue_family.index, null);
+    defer fence.deinit();
+
+    const stage_masks: []const vk.PipelineStageFlags = &.{};
+
+    const submits: []const vk.SubmitInfo = &.{
+        .{
+            .command_buffer_count = @intCast(u32, command_buffers.handles.len),
+            .p_command_buffers = command_buffers.handles.ptr,
+            .p_wait_dst_stage_mask = stage_masks.ptr,
+        },
+    };
+
+    try device.vkd.queueSubmit(queue.handle, @intCast(u32, submits.len), submits.ptr, fence.handle);
+    const fences: []const vk.Fence = &.{
+        fence.handle,
+    };
+    const t1 = std.time.nanoTimestamp();
+    _ = try device.vkd.waitForFences(device.handle, @intCast(u32, fences.len), fences.ptr, 0, std.math.maxInt(u64));
+    const t2 = std.time.nanoTimestamp();
+    std.debug.print("GPU took {} ns\n", .{t2 - t1});
 }
