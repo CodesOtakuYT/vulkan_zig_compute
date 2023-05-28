@@ -45,6 +45,10 @@ pub fn build(builder: *std.Build) void {
     );
     shader_comp.add("minimal_shader", "shaders/minimal.comp", .{});
     exe.addModule("shaders", shader_comp.getModule());
+    const zigimg_module = builder.createModule(.{
+        .source_file = std.Build.FileSource.relative("lib/zigimg/zigimg.zig"),
+    });
+    exe.addModule("zigimg", zigimg_module);
 
     exe.linkLibC();
 

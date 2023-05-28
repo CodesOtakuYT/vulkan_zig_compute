@@ -4,6 +4,7 @@ const shaders = @import("shaders");
 
 // const vk = @import("vulkan");
 const vk = @import("vk.zig"); // workaround for autocomplete
+const zigimg = @import("zigimg");
 
 const BaseDispatch = vk.BaseWrapper(.{
     .createInstance = true,
@@ -232,7 +233,7 @@ const ShaderModule = struct {
         return .{
             .handle = try device.vkd.createShaderModule(device.handle, &.{
                 .code_size = code.len,
-                .p_code = @ptrCast([*]const u32, @alignCast(4, code.ptr)),
+                .p_code = @ptrCast([*c]const u32, @alignCast(4, code.ptr)),
             }, allocation_callbacks),
             .device = device,
             .allocation_callbacks = allocation_callbacks,
@@ -540,4 +541,11 @@ pub fn main() !void {
     _ = try device.vkd.waitForFences(device.handle, @intCast(u32, fences.len), fences.ptr, 0, std.math.maxInt(u64));
     const t2 = std.time.nanoTimestamp();
     std.debug.print("GPU took {} ns\n", .{t2 - t1});
+
+    // var image = try zigimg.Image.create(allocator, 720, 720, zigimg.PixelFormat.rgba32);
+    // defer image.deinit();
+
+    // @memset(image.pixels.rgba32, zigimg.color.Rgba32.initRgb(255, 0, 0));
+
+    // try image.writeToFilePath("image.qoi", .{ .qoi = .{} });
 }
